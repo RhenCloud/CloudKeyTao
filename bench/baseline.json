@@ -1,0 +1,24 @@
+{
+  "_note": "由 scripts/bench.py 生成。语料为占位文本（Q27），绝对值仅本仓库内可比。",
+  "corpus": "bench/corpus.txt",
+  "upstream_keytao_rev": "3e11969655105b267aceebd5b2594374b8dfe7cc",
+  "tables": [
+    "cloudkeytao.single",
+    "cloudkeytao.phrase",
+    "cloudkeytao.symbol",
+    "cloudkeytao.supplement",
+    "cloudkeytao.link",
+    "cloudkeytao.english",
+    "cloudkeytao.css",
+    "cloudkeytao.user",
+    "cloudkeytao.custom.user"
+  ],
+  "metrics": {
+    "corpus_chars": 1385,
+    "covered_chars": 1385,
+    "empty_rate": 0.0,
+    "first_hit_rate": 1.0,
+    "avg_rank": 1.0,
+    "avg_len": 2.279
+  }
+}
