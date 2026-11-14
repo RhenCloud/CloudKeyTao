@@ -97,11 +97,15 @@ cp "$REPO_ROOT"/dicts/*.dict.yaml "$OUT"/
 # cloudkeytao.xmjd6：从 xmjd6 加工出来的长尾词组表（§6）。
 # 生成逻辑在 scripts/merge-xmjd6.py，这里只负责调用与校验。
 #
+# 为什么直接写到 $OUT 而不是 dicts/gen/ 再拷：
+# 在 nix 下 $REPO_ROOT 是只读的 store 路径，往 dicts/gen/ 写会
+# PermissionError。产物目录 $OUT 是唯一可写的地方 —— 这也更正确：
+# 生成物本来就是产物的一部分，不是源码。
+#
 # 为什么要传 --existing：§6.4 要求与 keytao 已有词条重复的保留 keytao 版本。
 # 实测 cizu+fjcy 里有 9.3 万条与 keytao 重叠，不排除的话这些词会在
 # 候选里出现两次（同一个 (text,code) 在两个表里各一份）。
 if [ -n "$XMJD6_SRC" ]; then
-    mkdir -p "$REPO_ROOT/dicts/gen"
     merge_args=()
     shopt -s nullglob
     for f in "$KEYTAO_SRC"/rime/keytao.*.dict.yaml; do
@@ -113,24 +117,33 @@ if [ -n "$XMJD6_SRC" ]; then
     log "生成 cloudkeytao.xmjd6（xmjd6-cizu/fjcy >=4 码 + danzi）..."
     "$PYTHON" "$REPO_ROOT/scripts/merge-xmjd6.py" \
         --xmjd6-src "$XMJD6_SRC" \
-        --out "$REPO_ROOT/dicts/gen/cloudkeytao.xmjd6.dict.yaml" \
-        --report "$REPO_ROOT/dicts/gen/xmjd6-report.md" \
+        --out "$OUT/cloudkeytao.xmjd6.dict.yaml" \
+        --report "$OUT/xmjd6-report.md" \
         "${merge_args[@]}"
+    chmod u+w "$OUT/cloudkeytao.xmjd6.dict.yaml"
 else
     die "XMJD6_SRC 未设置：M2 起构建必须提供 xmjd6 词库来源"
 fi
 
+# 注：生成表名已是最终名（cloudkeytao.xmjd6），不需要 normalize 改名，
+# 但必须出现在 extended 的 import_tables 里（第 7 步）。
 GENERATED_TABLES=()
+[[ -f "$OUT/cloudkeytao.xmjd6.dict.yaml" ]] && GENERATED_TABLES=(cloudkeytao.xmjd6)
+# ── 6c. 手写回流词库与生成物共存 ────────────────────────────────────────────
+# dicts/gen/ 只在本地开发时存在（构建时已直接写入 $OUT）。
+# 保留这一步是为了让 `python3 scripts/merge-xmjd6.py --out dicts/gen/...`
+# 这种手动调试产出的文件也能被正常带进产物。
 shopt -s nullglob
 gen_dicts=("$REPO_ROOT"/dicts/gen/*.dict.yaml)
 shopt -u nullglob
 if [ ${#gen_dicts[@]} -gt 0 ]; then
-    cp "${gen_dicts[@]}" "$OUT"/
     for f in "${gen_dicts[@]}"; do
-        # 从 name: 行取表名，避免用文件名猜
-        GENERATED_TABLES+=("$(awk '/^name:[[:space:]]*/{print $2; exit}' "$f")")
+        name=$(awk '/^name:[[:space:]]*/{print $2; exit}' "$f")
+        [ -f "$OUT/$name.dict.yaml" ] && continue
+        cp "$f" "$OUT/"
+        GENERATED_TABLES+=("$name")
     done
-    log "已导入生成词库: ${GENERATED_TABLES[*]}"
+    [ ${#GENERATED_TABLES[@]} -eq 0 ] || log "已导入本地生成词库: ${GENERATED_TABLES[*]}"
 fi
 
 # ── 7. keytao.extended.dict.yaml：幂等插入外挂词库 import ───────────────────
