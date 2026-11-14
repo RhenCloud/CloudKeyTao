@@ -14,9 +14,23 @@
 #   * 产物是独立方案：不出现 keytao.schema.yaml、不出现 keytao.* 表名
 set -euo pipefail
 
-REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# REPO_ROOT：默认从脚本位置推导；被 nix 以单文件形式引入时（${./scripts/build.sh}）
+# 推导会出错，因此支持用 CLOUDKEYTAO_ROOT 显式指定。
+REPO_ROOT=${CLOUDKEYTAO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 KEYTAO_SRC=${KEYTAO_SRC:-}
 XMJD6_SRC=${XMJD6_SRC:-}
+
+# 参数式输出目录（flake 的 packages 用 --out，其余场景用 env OUT）
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out)   OUT=$2; shift 2 ;;
+        --out=*) OUT=${1#--out=}; shift ;;
+        -h|--help)
+            sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *) printf '未知参数: %s\n' "$1" >&2; exit 2 ;;
+    esac
+done
 OUT=${OUT:-$REPO_ROOT/dist/rime}
 
 log()  { printf '[build] %s\n' "$*"; }
@@ -38,7 +52,12 @@ if [ -n "$XMJD6_SRC" ]; then log "XMJD6_SRC  = $XMJD6_SRC"; else log "XMJD6_SRC 
 log "OUT        = $OUT"
 
 # ── 1. 清空输出 ──────────────────────────────────────────────────────────────
-rm -rf "$OUT"
+# 注意：若 OUT 曾经是 nix build 的目标，里面会是只读 store 文件，
+# 必须先加回写权限才能删。
+if [ -e "$OUT" ]; then
+    chmod -R u+w "$OUT" 2>/dev/null || true
+    rm -rf "$OUT"
+fi
 mkdir -p "$OUT/lua"
 
 # ── 2. 上游核心文件（与上游 default.nix 的产物定义一致）─────────────────────
@@ -46,6 +65,11 @@ mkdir -p "$OUT/lua"
 cp -r "$KEYTAO_SRC/rime/." "$OUT"/
 # 2b. 桌面平台 schema（keytao.schema.yaml 在这里进入产物，稍后由 normalize.py 内联）
 cp "$KEYTAO_SRC"/schema/desktop/*.yaml "$OUT"/
+
+# 2c. 上游文件在 nix store 里是 444（只读），cp -r 会把只读权限带进产物，
+#     导致后续覆盖同名文件时 permission denied。统一加回写权限。
+#     （后面从 overlay/、dicts/ 拷入的文件也可能只读，所以 normalize 前再 chmod 一次）
+chmod -R u+w "$OUT"
 
 # ── 3. rime.lua 分层：上游原样 → lua/_upstream.lua，入口由我们接管 ──────────
 # 这样永远不需要编辑上游的 rime.lua（旧方案用 sed -i 改 nix store 里的文件）
@@ -106,6 +130,9 @@ done
 # ── 8. 归一化：内联 schema + 词库改名 + 删除多方案产物 ──────────────────────
 # 这一步之后，产物里不再有 keytao.schema.yaml，所有表名变成 cloudkeytao.*，
 # 菜单里只剩 cloudkeytao 一个方案。
+#
+# normalize 要改写 dicts/ 拷进来的文件，而这些文件在 nix 下也是只读。
+chmod -R u+w "$OUT"
 "$PYTHON" "$REPO_ROOT/scripts/normalize.py" \
     --out "$OUT" \
     --meta "$REPO_ROOT/overlay/schema-meta.yaml"
