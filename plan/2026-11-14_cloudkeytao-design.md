@@ -483,10 +483,55 @@ recognizer 看到的段已经是 `ne`dao` 而不是 `` `dao ``，反查规则匹
 - 二分：`hr hryk v z ykvv x b dz el` —— 10/10 命中
 - GBK：与拼音/二分共用同一前缀，用 `wxk`→`往下看`、`wwx`→`维吾尔` 验证表已加载
 
-> ⚠️ **M3 遗留**：`scripts/measure_memory.sh` 尚未存在。当前只记录了
-> `.bin` 体积，未记录运行时常驻内存增量。若要评估安卓侧可行性，
-> 需补这个脚本（可用 `ps -o rss` 在 fcitx5 加载方案前后采样）。
-> 暂不做退路（GBK 按需加载），等有实测证据再说。
+### 7.4 运行时常驻内存实测
+
+`scripts/measure_memory.sh` 已实现。做法是编一个最小 librime 客户端（probe），
+对比两组产物的 RSS 中位数：
+
+- `base`：从 patch 里摘掉三个 `reverse_lookup_translator`、
+  `schema/dependencies` 与 lookup 词库
+- `lookup`：完整产物
+
+测量须知（决定了数字怎人看）：
+
+- **词表是 mmap 的**，`Load()` 返回时页还没被触碰，RSS 会虚低。
+  所以 warm 必须真的把每张表查一次（普通词 + 三个反查前缀），
+  否则测出的是“加载完还没用过”的假数据。
+  实测：只打一个词时增量 2.4 MiB，充分 warm 后变成 6.0～7.1 MiB。
+- 波动来自 mmap 调页，多次采样取中位数仍会有 ±1 MiB 抖动，
+  所以记录区间而非单点值。
+
+实测结果（Linux x86_64，5～7 次采样中位数）：
+
+| 分组 | RSS | `.table.bin` 合计 |
+|---|---|---|
+| base（无反查） | 31.3 MiB | 24.5 MiB |
+| lookup（完整） | 37.4～39.2 MiB | 35.9 MiB |
+| **增量** | **6.0～7.1 MiB（+19～22%）** | 11.4 MiB |
+
+RSS 增量（6～7 MiB）小于 `.table.bin` 增量（11.4 MiB），说明还有
+约一半的表页从未被访问 —— 这是 mmap 的正常表现，也意味着**如果用户
+真的把三张反查表都用到，开销会继续向 11 MiB 靠**。
+
+### 7.5 反查不是懒加载（对退路的影响）
+
+§7 原本预留的退路是“GBK 词库只在 `o` 键补丁下按需加载”。实测发现
+这个退路的前提不成立：
+
+```text
+loading table file: cloudkeytao.extended.table.bin
+loading table file: cloudkeytao.lookup.pinyin.table.bin      ← 始终加载
+loading table file: cloudkeytao.lookup.liangfen.table.bin    ← 始终加载
+loading table file: cloudkeytao.lookup.gbk.table.bin         ← 始终加载
+```
+
+`TableTranslator` 在 `Initialize()` 里就 `Load()` 词典，三张表在选中
+方案时就全部打开，与用户是否打 `` ` `` 无关。
+
+所以如果安卓侧认为 6～11 MiB 不可接受，退路**不能**是“用户不打就不加载”，
+必须真的改架构 —— 比如把 GBK 词库挂到一个开关控制的
+`lua_translator` 上，或者拆成两个 schema 让用户手选。当前不做：
+6～7 MiB 在一个约 40 MiB 的方案里不算突出，等安卓真机数据再说。
 
 ---
 

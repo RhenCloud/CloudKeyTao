@@ -82,6 +82,16 @@ Linux 由 Nix 打包安装；Android 直接使用 release 里的 `cloudkeytao-<v
 `bench/baseline.json` 记录 `{corpus_sha256, git_tag, metrics}`。
 **换语料必须重跑基线，不同语料的数字不可跨版本比较。**
 
+内存开销单独度量（尤其是反查词库）：
+
+```bash
+./scripts/measure_memory.sh --runs 5   # → 有无反查的 RSS 差值
+```
+
+对比两组产物（摘掉反查 / 完整）的 RSS 中位数。注意词表是 mmap 的，
+所以脚本会把普通输入与三个反查前缀都打一遍 —— 否则测到的是
+「加载完还没用过」的虚低值。当前实测：反查增量 6.0～7.1 MiB（+19～22%）。
+
 ## 致谢与授权说明
 
 - **星空键道 6** — 吅吅大山（<https://github.com/xkinput/KeyTao>）。编码规则、词库结构与方案设计版权归原作者。
