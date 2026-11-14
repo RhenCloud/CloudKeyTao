@@ -1,0 +1,146 @@
+# cloudkeytao.custom.yaml —— CloudKeyTao 的全部行为改动都在这里
+#
+# 这是 Rime 官方的 patch 机制：部署时叠加到 cloudkeytao.schema.yaml 上。
+# 好处是 cloudkeytao.schema.yaml 恒定只有几行（见该文件注释），
+# 上游怎么改 schema 都不会让本文件产生冲突。
+#
+# 本文件由旧的 NixOS-Config `keytao.custom.yaml` 迁移而来，逐条对应，
+# 并在 M1 落地了 Q18=B 的键位决策（见下方 key_binder）。
+#
+# 注：flow mapping 统一写成 `{key: value}`（上游习惯在花括号内留空格，
+#     本仓库的 lint 规则不允许，两者语义等价）。
+
+patch:
+  # ── 开关默认值 ────────────────────────────────────────────────────────────
+  # emoji_cn 在上游 switches 中位于索引 3，上游默认 reset: 0（关表情）。
+  # 这里改为默认开启，F3 或 & 可临时关闭。
+  #
+  # ⚠️ 索引式 patch 是脆弱的。build.sh 会断言 switches/@3 确实是 emoji_cn，
+  #    上游若新增/重排 switches，构建会失败而不是静默错位。
+  "switches/@3/reset": 1
+
+  # ── 键位（层 4）──────────────────────────────────────────────────────────
+  # 决策 Q18=B：保留键道原生 - / = 翻页（上游 schema 已内置），
+  # , . [ ] 不绑定，保持标点用途。
+  #
+  # ⚠️ 修了一个历史 bug：旧 NixOS-Config 里写的是
+  #      "key/key_binder/bindings/+"
+  #    但 librime 读的是 `key_binder/bindings`（见 gear/key_binder.cc），
+  #    多出来的 `key/` 一层让它成了无人读取的孤立节点。
+  #    所以以前的 F3 开关与 , . [ ] 翻页**从未生效**，
+  #    这也是为何你一直用的就是 - / =。
+  #    这里改用正确路径；build.sh 会断言不存在孤立的顶层 `key:` 节点。
+  "key_binder/bindings/+":
+    - {accept: F3, toggle: emoji_cn, when: has_menu}
+
+  # ── 快捷文本识别 ─────────────────────────────────────────────────────────
+  "recognizer/patterns/+":
+    quick_text: "^/(rq|rqcn|sj|ts|unix|uuid|email)$"
+
+  # ── 过滤器 ────────────────────────────────────────────────────────────────
+  "engine/filters/+":
+    - lua_filter@*defer_emoji_filter
+    - lua_filter@*promote_custom_phrase
+
+  # ── 处理器（需整体覆写以插入 add_phrase 的位置）───────────────────────────
+  "engine/processors":
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - lua_processor@topup_processor
+    - lua_processor@smart_2
+    - speller
+    - lua_processor@*add_phrase
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+
+  # ── 翻译器 ────────────────────────────────────────────────────────────────
+  "engine/translators/+":
+    - lua_translator@custom_phrase_live
+    - lua_translator@quick_text
+
+  # ── 自定义短语 ────────────────────────────────────────────────────────────
+  custom_phrase:
+    initial_quality: 1000000
+
+  # ── ascii_composer：不因 Caps/Shift 而上屏，避免误触 ──────────────────────
+  ascii_composer:
+    good_old_caps_lock: false
+    switch_key:
+      Caps_Lock: clear
+      Shift_L: noop
+      Shift_R: noop
+      Control_L: noop
+      Control_R: noop
+
+  # ── 标点（沿用旧配置的完整表；上游 punctuator 只 import symbols）──────────
+  punctuator:
+    full_shape:
+      " ": {commit: "　"}
+      ",": {commit: ，}
+      ".": {commit: 。}
+      "<": [《, 〈, «, ‹]
+      ">": [》, 〉, », ›]
+      "/": [/, ÷]
+      "?": {commit: ？}
+      ";": {commit: ；}
+      ":": {commit: ：}
+      "'": {pair: ["‘", "’"]}
+      '"': {pair: ["“", "”"]}
+      '\': [、, ＼]
+      "|": [·, ｜, "§", "¦"]
+      "`": ｀
+      "~": ～
+      "!": {commit: ！}
+      "@": [＠, ☯]
+      "#": [＃, ⌘]
+      "%": [％, "°", "℃"]
+      "$": [￥, "$", "€", "£", "¥", "¢", "¤"]
+      "^": {commit: ……}
+      "&": ＆
+      "*": [＊, ·, ・, ×, ※, ❂]
+      "(": （
+      ")": ）
+      "-": －
+      "_": ——
+      "+": ＋
+      "=": ＝
+      "[": [「, 【, 〔, ［]
+      "]": [」, 】, 〕, ］]
+      "{": [『, 〖, ｛]
+      "}": [』, 〗, ｝]
+    half_shape:
+      ",": "，"
+      ".": "。"
+      "<": "⟪"
+      ">": "⟫"
+      "/": "/"
+      "?": "？"
+      ";": "；"
+      ":": "："
+      "'": {pair: ["‘", "’"]}
+      '"': {pair: ["“", "”"]}
+      '\': "、"
+      "|": ["·", "|", "｜", "§", "¦"]
+      "`": "、"
+      "~": "～"
+      "!": "！"
+      "@": "@"
+      "#": "#"
+      "%": "%"
+      "$": "¥"
+      "^": "…"
+      "&": "&"
+      "*": "*"
+      "(": "（"
+      ")": "）"
+      "-": "-"
+      "_": ——
+      "+": "+"
+      "=": "="
+      "[": "「"
+      "]": "」"
+      "{": "『"
+      "}": "』"

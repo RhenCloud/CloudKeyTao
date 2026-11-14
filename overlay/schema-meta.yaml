@@ -1,0 +1,7 @@
+# CloudKeyTao 方案身份 —— 由 scripts/normalize.py 读取，逐行缩进后写入
+# cloudkeytao.schema.yaml 的 schema: 块。本文件的注释不会被带进产物。
+#
+# 改这里 = 改方案身份。改行为请去 overlay/cloudkeytao.custom.yaml。
+schema_id: cloudkeytao
+name: CloudKeyTao
+version: "1.0"

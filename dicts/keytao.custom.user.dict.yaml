@@ -1,0 +1,22 @@
+# Rime dictionary
+# encoding: utf-8
+#
+# CloudKeyTao 的个人词库（作为 keytao.extended 的一个 import 表）。
+#
+# 谁是权威：
+#   * 本文件是**仓库内的权威副本**，由 keytao-custom-phrase-sync 定时器
+#     从输入法动态造词回流（见 NixOS-Config 的同名 timer）。
+#   * 运行时目录里的同名文件是部署产物，不要手改。
+#
+# 注意：keytao 与 cloudkeytao 共用这一个表 —— 这正是 Q8 双 id 并存的意义：
+#   两个方案的候选来源相同，差异只在排序与功能，A/B 才有可比性。
+---
+name: keytao.custom.user
+version: "1.0"
+sort: by_weight
+use_preset_vocabulary: false
+columns:
+  - text
+  - code
+  - weight
+...

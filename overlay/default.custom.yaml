@@ -1,0 +1,21 @@
+# default.custom.yaml —— 覆盖上游同名文件，产物只提供 cloudkeytao 一个方案
+#
+# 与上游的差别只有 schema_list：仅保留 cloudkeytao。
+# 上游的 keytao / keytao-dz / keytao-bj 都不在产物里
+# （见 scripts/normalize.py 的 DROP_FILES），因此不能出现在菜单中。
+#
+# build.sh 会断言：schema_list 恰好只有 cloudkeytao。
+patch:
+  switcher:
+    caption: '「切换方案」'
+    hotkeys:
+      - 'Control+grave'
+      - 'F4'
+  schema_list:
+    - schema: cloudkeytao
+  menu:
+    page_size: 6
+  ascii_composer/good_old_caps_lock: true
+  ascii_composer/switch_key:
+    Caps_Lock: commit_text
+    Shift_L: commit_text

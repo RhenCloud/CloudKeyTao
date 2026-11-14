@@ -1,0 +1,17 @@
+# CloudKeyTao schema
+#
+#  由上游 keytao.schema.yaml 经 `__include` 派生，**不复制任何上游内容**。
+#  上游改了 schema，本文件自动跟进；这里只声明"身份"。
+#
+#  行为改动一律写在 cloudkeytao.custom.yaml 里（Rime 官方 patch 机制），
+#  以保持本文件在所有上游版本下都只有这几行。
+#
+#  注：__include 的合并语义已由 M1 的 rime_deployer --build 实测确认：
+#      部署后 build/cloudkeytao.schema.yaml 为完整的 371 行展开结果，
+#      且复用 keytao.extended 的 .bin，不产生重复编译。
+__include: keytao.schema.yaml:/
+
+schema:
+  schema_id: cloudkeytao
+  name: CloudKeyTao
+  version: "1.0"
