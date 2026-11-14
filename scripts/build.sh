@@ -129,6 +129,77 @@ fi
 # 但必须出现在 extended 的 import_tables 里（第 7 步）。
 GENERATED_TABLES=()
 [[ -f "$OUT/cloudkeytao.xmjd6.dict.yaml" ]] && GENERATED_TABLES=(cloudkeytao.xmjd6)
+
+# ── 6b′. 反查词库（M3，§7）──────────────────────────────────────────────
+# 三份词库只服务 `` ` `` 反查，**不能**进 extended 的 import_tables：
+# 它们存的是拼音/二分的编码，混进主词库会把「到」这类单字的候选
+# 变成拼音字符串。反查靠独立的 table_translator 按需加载。
+#
+# 表名改名为 cloudkeytao.* 是必要的：normalize.py 的引用改写只认
+# keytao 前缀（这里源名是 pinyin_simp/liangfen/xmjd6.gbk），
+# 而且是产物自己的命名空间，避免和 rime 预设的 stroke/symbols 撞名。
+if [ -n "$XMJD6_SRC" ]; then
+    declare -A LOOKUP_SRC=(
+        [cloudkeytao.lookup.pinyin]="$XMJD6_SRC/pinyin_simp.dict.yaml"
+        [cloudkeytao.lookup.liangfen]="$XMJD6_SRC/liangfen.dict.yaml"
+        [cloudkeytao.lookup.gbk]="$XMJD6_SRC/xmjd6.gbk.dict.yaml"
+    )
+    LOOKUP_TABLES=()
+    for name in "${!LOOKUP_SRC[@]}"; do
+        src="${LOOKUP_SRC[$name]}"
+        [ -f "$src" ] || die "反查词库缺失: $src"
+        # 用 awk 重写 name: 行，其余内容（表头/词条）原样保留。
+        # 不用 sed -i：在只读 store 上无意义，且需处理管道编码。
+        awk -v n="$name" '
+            !done && /^name:[[:space:]]*/ { print "name: " n; done=1; next }
+            { print }
+            END { if (!done) { print "# WARNING: 原表没有 name: 行" > "/dev/stderr" } }
+        ' "$src" > "$OUT/$name.dict.yaml" \
+            || die "重写反查词库表头失败: $src"
+        chmod u+w "$OUT/$name.dict.yaml"
+        LOOKUP_TABLES+=("$name")
+
+        # 每个反查词库必须有自己的 schema —— 不是为了给用户选，
+        # 而是因为 rime_deployer 只编译 schema_list 里的 schema 及其
+        # schema/dependencies 声明的依赖（见 librime
+        # lever/deployment_tasks.cc:240 那段 build_schema(dependency_id)）。
+        #
+        # 没有这个文件，反查词库永远不会生成 .table.bin，
+        # translator 加载时只会在日志里留一行 E，运行时默默返回 0 候选。
+        # （实测踩过，§7 未预见）
+        label=${name##*.}
+        case "$label" in
+            pinyin)   label_zh="拼音" ;;
+            liangfen) label_zh="二分" ;;
+            gbk)      label_zh="GBK"  ;;
+            *)        label_zh="$label" ;;
+        esac
+        cat > "$OUT/$name.schema.yaml" <<EOF
+# 反查词库的编译载体 —— 由 cloudkeytao.schema.yaml 的
+# schema/dependencies 引用，因此不需要进 schema_list，用户菜单里看不到。
+# 本文件由 scripts/build.sh 的 6b′ 步生成，勿手改。
+schema:
+  schema_id: $name
+  name: CloudKeyTao 反查·$label_zh
+  version: "1.0"
+
+engine:
+  translators:
+    - table_translator
+
+translator:
+  dictionary: $name
+
+speller:
+  alphabet: "abcdefghijklmnopqrstuvwxyz"
+EOF
+        chmod u+w "$OUT/$name.schema.yaml"
+    done
+    log "反查词库就绪: ${LOOKUP_TABLES[*]}"
+else
+    die "XMJD6_SRC 未设置：M3 反查词库也来自 xmjd6"
+fi
+
 # ── 6c. 手写回流词库与生成物共存 ────────────────────────────────────────────
 # dicts/gen/ 只在本地开发时存在（构建时已直接写入 $OUT）。
 # 保留这一步是为了让 `python3 scripts/merge-xmjd6.py --out dicts/gen/...`
@@ -203,12 +274,19 @@ require_abs keytao-bj.schema.yaml
 require_abs keytao-dz.schema.yaml
 require_abs keytao-dz.extended.dict.yaml
 
-# 兜底：产物里只能有一个 schema，且不能有 keytao.* 词库文件
-mapfile -t schema_files < <(cd "$OUT" && ls *.schema.yaml 2>/dev/null)
+# 兜底：产物里只能有一个**方案** schema，且不能有 keytao.* 词库文件
+#
+# 例外：cloudkeytao.lookup.*.schema.yaml 是反查词库的编译载体，
+# 只有 schema_id / dictionary / 空 speller，不进 schema_list，
+# 用户菜单里看不到。它们必须存在，否则反查词典不会被编译。
+mapfile -t all_schema_files < <(cd "$OUT" && ls *.schema.yaml 2>/dev/null)
+mapfile -t schema_files < <(
+    printf '%s\n' "${all_schema_files[@]}" | grep -v '^cloudkeytao\.lookup\.' || true
+)
 [ "${#schema_files[@]}" -eq 1 ] \
-    || die "产物应只有 1 个 .schema.yaml，实际: ${schema_files[*]:-none}"
+    || die "产物应只有 1 个方案 .schema.yaml，实际: ${schema_files[*]:-none}"
 [ "${schema_files[0]}" = "cloudkeytao.schema.yaml" ] \
-    || die "产物唯一 schema 应为 cloudkeytao.schema.yaml，实际 '${schema_files[0]}'"
+    || die "产物唯一方案 schema 应为 cloudkeytao.schema.yaml，实际 '${schema_files[0]}'"
 leftover_dicts=$(cd "$OUT" && ls keytao*.dict.yaml 2>/dev/null || true)
 [ -z "$leftover_dicts" ] \
     || die "产物仍有未改名的 keytao 词库: $leftover_dicts"
@@ -293,7 +371,19 @@ overlap=$(LC_ALL=C comm -12 "$keytao_keys" "$xmjd6_keys" | wc -l)
     || die "cloudkeytao.xmjd6 与已有词库有 $overlap 条 (text,code) 重复，违反 §6.4（检查是否忘了传 --existing）"
 
 # 13d. 平均候选数与最大候选数（§6.4）
-# 把产物里所有表合起来算，因为候选是跨表展示的。
+# 把产物里所有**主词库**表合起来算，因为主词库的候选是跨表展示的。
+#
+# 必须排除反查词库（cloudkeytao.lookup.*）：它们存的是拼音/二分编码，
+# 大量同码（如拼音 "yi" 就有上百个字），混进来会让这个断言失去意义。
+# 反查候选多不是问题 —— 反查本来就是"列出一堆让你选"。
+main_dicts=()
+for f in "$OUT"/cloudkeytao.*.dict.yaml; do
+    case "$f" in
+        */cloudkeytao.lookup.*) continue ;;
+    esac
+    main_dicts+=("$f")
+done
+[ ${#main_dicts[@]} -gt 0 ] || die "找不到任何主词库产物"
 avg_and_max=$(LC_ALL=C awk -F'\t' '
     FNR==1 { next }
     NF>=2 && $1 !~ /^#/ && $2 ~ /^[a-z;]+$/ && $1 != "text" { c[$2]++ }
@@ -306,7 +396,7 @@ avg_and_max=$(LC_ALL=C awk -F'\t' '
         for (k in c) if (c[k] > mx) mx = c[k]
         printf "%.3f %d\n", total/n, mx
     }
-' "$OUT"/cloudkeytao.*.dict.yaml)
+' "${main_dicts[@]}")
 avg=${avg_and_max% *}
 mx=${avg_and_max#* }
 awk -v a="$avg" 'BEGIN { exit !(a <= 1.2) }' \

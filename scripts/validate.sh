@@ -64,14 +64,26 @@ fi
 warnings=$(grep -cE '^W[0-9]' "$WORK/deploy.log" || true)
 [ "$warnings" -eq 0 ] || log "警告 $warnings 条（不致命）"
 
-# 必须产出预期 bin：唯一方案 cloudkeytao 的词库三件套
+# 必须产出预期 bin：主词库三件套 + 三个反查词库三件套
 for bin in prism reverse table; do
     [ -f "$WORK/build/cloudkeytao.extended.$bin.bin" ] \
         || die "缺少 cloudkeytao.extended.$bin.bin（部署未真正完成，rc=$deploy_rc）"
 done
+# 反查词库缺任何一个，反查就会静默返回 0 候选（见 build.sh 6b′ 的说明）
+for name in pinyin liangfen gbk; do
+    for bin in prism reverse table; do
+        [ -f "$WORK/build/cloudkeytao.lookup.$name.$bin.bin" ] \
+            || die "缺少 cloudkeytao.lookup.$name.$bin.bin（反查词库未编译，rc=$deploy_rc）"
+    done
+done
 
-# 产物里不能冒出第二个方案
-mapfile -t schemas < <(cd "$WORK/build" && ls *.schema.yaml 2>/dev/null | grep -v '^default\.yaml$')
-[ "${#schemas[@]}" -eq 1 ] || die "build/ 应有 1 个 schema，实际: ${schemas[*]:-none}"
+# 产物里不能冒出第二个**方案**
+# （cloudkeytao.lookup.*.schema.yaml 是反查词库的编译载体，不算方案）
+mapfile -t schemas < <(
+    cd "$WORK/build" && ls *.schema.yaml 2>/dev/null \
+        | grep -v '^default\.yaml$' \
+        | grep -v '^cloudkeytao\.lookup\.' || true
+)
+[ "${#schemas[@]}" -eq 1 ] || die "build/ 应有 1 个方案 schema，实际: ${schemas[*]:-none}"
 
 log "OK —— 部署验证通过（$(( $(ls "$WORK"/build/*.bin | wc -l) )) 个 bin）"

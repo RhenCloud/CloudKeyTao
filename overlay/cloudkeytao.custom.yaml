@@ -36,6 +36,61 @@ patch:
   # ── 快捷文本识别 ─────────────────────────────────────────────────────────
   "recognizer/patterns/+":
     quick_text: "^/(rq|rqcn|sj|ts|unix|uuid|email)$"
+    # 反查（M3，§7）：` 引导 + 小写字母 + 可选后缀 '。
+    #
+    # 后缀 ' 必须写进规则、且不在 speller.alphabet 里，否则 recognizer
+    # 会把它当成编码字符，整个段就永远匹配到结束状态。
+    reverse_lookup: "^`[a-z]*'?$"
+
+  # 与反查抢 tag 的上游规则 —— 必须删掉。
+  #
+  # 这一条是本次 M3 最难查的坑（实测结论）：
+  #
+  #   recognizer 按 patterns 的**配置顺序**逐条试，先命中先得。
+  #   上游 `danzi_lookup: "[a-z`]*`+[a-z`]*"` 也会匹配 "`dao"，
+  #   把 segment 标成 tag=danzi_lookup。而 reverse_lookup_translator
+  #   只处理 tag=reverse_lookup 的段（见 librime
+  #   gear/reverse_lookup_translator.cc:145 `segment.HasTag(tag_)`），
+  #   于是反查 translator 永远拿不到段 —— 表现就是「`dao 有 preedit、
+  #   0 候选」且部署日志**一点错都不报**。
+  #
+  #   删掉 danzi_lookup 不会损失功能：它的消费者 reverse_lookup_filter@danzi_lookup
+  #   是用 filters 的 tags 字段匹配的，与 recognizer 的这条规则无关
+  #   （实测删掉后打字时的反显注释仍然正常）。
+  #
+  #   上游 `pinyin: "(?<![`A-Z])`[a-z']*;?$"` 同样是死规则：
+  #   全仓库没有任何 translator 消费 tag=pinyin，纯遗留。一并删掉。
+  "recognizer/patterns/danzi_lookup": null
+  "recognizer/patterns/pinyin": null
+
+  # ── 反查前缀的字母表隔离 ─────────────────────────────────────────────────
+  # 把 ` 从 speller.alphabet 里拿掉。
+  #
+  # alphabet 里有 ` 时，speller 会把它当普通字母吃进当前音节，
+  # recognizer 看到的段已经是 "ne`dao" 而不是 "`dao"，反查规则匹配不上。
+  #
+  # 副作用：` 不再是输入字母。这本来也该如此 —— 键道的顶功分隔
+  # 用的是 `，但它只出现在 algebra 的 derive 结果里（由长码派生出的
+  # 短码），用户从不主动敲 `。
+  "speller/alphabet": "abcdefghijklmnopqrstuvwxyz;/="
+  "speller/initials": "abcdefghijklmnopqrstuvwxyz;/="
+
+  # ── 反查词典的编译依赖 ───────────────────────────────────────────────────
+  # **这是反查能不能用的前提**（实测结论）。
+  #
+  # rime_deployer 只编译两类词典：
+  #   1. default.yaml 里 schema_list 列出的 schema 的 translator.dictionary
+  #   2. 那些 schema 的 schema/dependencies 里声明的 schema
+  #
+  # 反查词库如果只被本文件的 translators 引用，**永远不会**生成
+  # .table.bin，反查静默返回 0 候选。所以必须把自己的 schema
+  # 声明为依赖 —— 这样它们会被编译，但不会进 schema_list，
+  # 用户菜单里也看不到。
+  schema/dependencies:
+    - cloudkeytao.lookup.pinyin
+    - cloudkeytao.lookup.liangfen
+    - cloudkeytao.lookup.gbk
+
 
   # ── 过滤器 ────────────────────────────────────────────────────────────────
   "engine/filters/+":
@@ -58,8 +113,63 @@ patch:
 
   # ── 翻译器 ────────────────────────────────────────────────────────────────
   "engine/translators/+":
+    # 反查（M3，§7）：三个词库各挂一个 translator，共用 ` 前缀。
+    # 放在 lua translator 之前不是必需的（translator 结果会合并），
+    # 但排前面可让反查候选优先于 oboot 记忆词。
+    - reverse_lookup_translator@lookup_pinyin
+    - reverse_lookup_translator@lookup_liangfen
+    - reverse_lookup_translator@lookup_gbk
     - lua_translator@custom_phrase_live
     - lua_translator@quick_text
+
+  # ── 反查（M3，§7）────────────────────────────────────────────────────────
+  # 三个反查共用 ` 前缀（Q9=C），各挂自己的词库：
+  #   pinyin    拼音反查（pinyin_simp，6.5 万条）
+  #   liangfen  二分/拆字反查（9.4 万条）
+  #   gbk       GBK 字集/生僻字（2.4 万条，带词组）
+  #
+  # tips 用于区分候选来自哪个词库：三个 translator 的结果会同时出现在
+  # 候选里，没有前缀就分不清「到」是拼音查到的还是二分查到的。
+  #
+  # ⚠️ 这三个词库**不进** extended 的 import_tables（见 build.sh 第 6b′ 步）：
+  #    它们存的是拼音/二分编码，混进主词库会让「到」这类单字的候选
+  #    变成拼音字符串。
+  # ⚠️ tag / suffix / enable_sentence 三项都不能省：
+  #   tag              与 recognizer 的 reverse_lookup 规则配对，缺了永远拿不到段
+  #   suffix: "'"      照 luna_pinyin 的约定；' 不在 alphabet 里，不会与编码冲突
+  #   enable_sentence  反查是逐字查字典，不要拿它组句
+  #
+  # 关于 tips：三个 translator 共用 ` 前缀，谁最后设置 prompt 谁生效，
+  # 所以用统一的〔反查〕而不是分别写〔拼音〕〔二分〕〔GBK〕—— 后者
+  # 会让界面永远显示最后一个挂上的词库名，是**误导**（实测如此）。
+  # 候选来源的区分靠 comment：reverse_lookup_filter@danzi_lookup 会给
+  # 每个候选补上键道简码 + 全码（如「到 | dz dzvaii」），比词库名更有用。
+  lookup_pinyin:
+    tag: reverse_lookup
+    dictionary: cloudkeytao.lookup.pinyin
+    prefix: "`"
+    suffix: "'"
+    enable_completion: true
+    enable_sentence: false
+    tips: 〔反查〕
+
+  lookup_liangfen:
+    tag: reverse_lookup
+    dictionary: cloudkeytao.lookup.liangfen
+    prefix: "`"
+    suffix: "'"
+    enable_completion: true
+    enable_sentence: false
+    tips: 〔反查〕
+
+  lookup_gbk:
+    tag: reverse_lookup
+    dictionary: cloudkeytao.lookup.gbk
+    prefix: "`"
+    suffix: "'"
+    enable_completion: true
+    enable_sentence: false
+    tips: 〔反查〕
 
   # ── 自定义短语 ────────────────────────────────────────────────────────────
   custom_phrase:

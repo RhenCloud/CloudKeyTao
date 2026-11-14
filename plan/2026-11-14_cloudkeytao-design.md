@@ -388,13 +388,105 @@ xdg.dataFile."fcitx5/rime/...".source = "${cloudkeytao}/share/rime-data/...";
 | 二分反查 | `` `拆字 `` | `liangfen.dict.yaml`（从 xmjd6 取） |
 | GBK 字集 | `` `... `` | `xmjd6.gbk.dict.yaml`（繁体/生僻字） |
 
-- 三者共用 `recognizer.patterns.pinyin` 与 `reverse_lookup_filter@danzi_lookup` 的既有语义。
+- 三者共用 `` ` `` 前缀（同一前缀下挂三个 `reverse_lookup_translator`）。
 - `u/v/o` 完全不动。
-- 候选里同时列出三种结果（同一 `` ` `` 前缀下的多个 translator），按命中类型加注释前缀区分。
 
-> ⚠️ **M3 验证点**：三个词库体量（`liangfen` / `gbk` / `pinyin_simp`）会显著增加部署时间与内存。
-> 必须用 `scripts/measure_memory.sh` 记录前后对比；若安卓侧内存不可接受，
-> 退路是 GBK 词库只在 `o` 键补丁下按需加载（与 Q9=C 仍兼容）。
+### 7.1 实测修正（M3 落地后回写）
+
+上面这段是设计时的假设。实际实现有 **4 处假设不成立**，都是一旦踩中
+就“部署 0 错误、运行时静默返回 0 候选”的坑，记在这里避免重犯：
+
+**① 上游根本没有 `reverse_lookup_translator`**
+
+`keytao.schema.yaml` 只有 `reverse_lookup_filter@danzi_lookup`（打字时
+反显单字键道码），没有任何 `reverse_lookup_translator`。所以原文说的
+“复用上游既有 `` ` `` 通道”是不成立的 —— M3 是从零补的。
+
+**② 反查词库必须有自己的 schema，否则永远不会被编译**
+
+`rime_deployer` 只编译两类词典：
+
+1. `default.yaml` 里 `schema_list` 列出的 schema 的 `translator.dictionary`
+2. 那些 schema 的 `schema/dependencies` 里声明的依赖
+   （见 librime `src/rime/lever/deployment_tasks.cc:240` 的
+   `build_schema(dependency_id, as_dependency)`）
+
+反查词库如果只被 `cloudkeytao.custom.yaml` 的 `translators` 引用，
+**不会**生成 `.table.bin`。表现：translator 初始化时只留一行
+`E ... Error opening table file`，运行时 0 候选。
+
+解法：给每个反查词库生成一个最小的 `<name>.schema.yaml`
+（`build.sh` 6b′ 步自动生成），并用 `schema/dependencies` 声明依赖。
+这样它们会被编译，但**不进** `schema_list`，用户菜单里看不到。
+
+**③ `danzi_lookup` / `pinyin` 两条 recognizer 规则会抢走 segment tag**
+
+这是最隐蔽的一条。recognizer 按 patterns 的**配置顺序**逐条试，
+先命中先得。上游的
+
+```yaml
+danzi_lookup: "[a-z`]*`+[a-z`]*"
+```
+
+也会匹配 `` `dao ``，把 segment 标成 `tag=danzi_lookup`。而
+`reverse_lookup_translator` 只处理 `segment.HasTag("reverse_lookup")`
+的段（`gear/reverse_lookup_translator.cc:145`），于是它永远拿不到段。
+
+解法：在 patch 里把这两条规则 `null` 掉。
+
+- 删 `danzi_lookup` **不损失功能**：它的消费者
+  `reverse_lookup_filter@danzi_lookup` 靠 filter 自身的 `tags:` 字段
+  工作，与 recognizer 这条规则无关（实测删掉后反显注释仍正常）。
+- 上游 `pinyin: "(?<![`A-Z])`[a-z']*;?$"` 是死规则 —— 全仓库没有任何
+  translator 消费 `tag=pinyin`，纯遗留。
+
+**④ `speller.alphabet` 里的 `` ` `` 必须拿掉**
+
+alphabet 含 `` ` `` 时，speller 会先把它当普通字母吃进当前音节，
+recognizer 看到的段已经是 `ne`dao` 而不是 `` `dao ``，反查规则匹配不上。
+
+副作用可接受：键道的顶功分隔号 `` ` `` 只出现在 `algebra` 的 derive
+结果里（由长码派生出的短码），用户从不主动敲它。
+
+### 7.2 候选注释的取值
+
+设计原意是“按命中类型加注释前缀区分”（〔拼音〕〔二分〕〔GBK〕）。
+实测发现两件事：
+
+- **tips 无法区分来源**：三个 translator 共用 `` ` `` 前缀，谁最后设置
+  `prompt` 谁生效，界面永远显示最后一个挂上的词库名 —— 是误导。
+  所以三个都用统一的 `〔反查〕`。
+- **注释被 `reverse_lookup_filter@danzi_lookup` 覆盖**：它设了
+  `overwrite_comment: true`，会给每个候选补上键道简码 + 全码。
+  这反而比词库名**更有用** —— 反查的目的就是“知道读音/字形，想知道
+  怎么打”，`到 | dz dzvaii` 正好是答案。所以保留，不做来源前缀。
+
+### 7.3 实测数据（Linux x86_64）
+
+产物 `.bin` 大小（部署后 `build/`）：
+
+| 文件 | 大小 |
+|---|---|
+| `cloudkeytao.extended.prism.bin` | 49 M |
+| `cloudkeytao.extended.table.bin` | 25 M |
+| `cloudkeytao.extended.reverse.bin` | 7.4 M |
+| `cloudkeytao.lookup.liangfen.table.bin` | 9.4 M |
+| `cloudkeytao.lookup.pinyin.table.bin` | 1.5 M |
+| `cloudkeytao.lookup.gbk.table.bin` | 696 K |
+| 其余 prism/reverse | < 1 M 各自 |
+
+反查词库净增约 **13 M**（主词库 81 M → 94 M，+16%）。
+
+验收记录（三条各 10 个样本，`/tmp/wtest/q2` 探针）：
+
+- 拼音：`dao ren hao wo zhong guo shi you zai bu` —— 10/10 命中
+- 二分：`hr hryk v z ykvv x b dz el` —— 10/10 命中
+- GBK：与拼音/二分共用同一前缀，用 `wxk`→`往下看`、`wwx`→`维吾尔` 验证表已加载
+
+> ⚠️ **M3 遗留**：`scripts/measure_memory.sh` 尚未存在。当前只记录了
+> `.bin` 体积，未记录运行时常驻内存增量。若要评估安卓侧可行性，
+> 需补这个脚本（可用 `ps -o rss` 在 fcitx5 加载方案前后采样）。
+> 暂不做退路（GBK 按需加载），等有实测证据再说。
 
 ---
 
