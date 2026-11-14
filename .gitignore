@@ -1,0 +1,10 @@
+plan/
+dist/
+dicts/gen/
+result
+result-*
+__pycache__/
+*.pyc
+scripts/rime_tui
+scripts/mem_bench
+.direnv/
