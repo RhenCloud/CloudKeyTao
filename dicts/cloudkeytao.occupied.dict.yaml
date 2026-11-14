@@ -1,0 +1,40 @@
+# 编码占用清单（由 scripts/gen-occupied-doc.py 生成，勿手改）
+#
+# 这张表不参与输入，是给 bench / CI 读的结构化数据：
+#   text = 该码位上的候选（空格分隔），code = 码位本身。
+# 用 Rime 词典格式是为了复用现有解析，不是为了被 rime_deployer 编译。
+---
+name: cloudkeytao.occupied
+version: "1.0"
+sort: by_weight
+columns:
+  - text
+  - code
+  - weight
+...
+乚 氺 氵 𠃌 乛 又 那	a	7
+吧 不	b	2
+此 才	c	2
+都 的	d	2
+实 识 是	e	3
+支 之 这	f	3
+个	g	1
+好 和	h	2
+亅 丨 人 龵 打 上	i	6
+鸡 及 就	j	3
+可	k	1
+啦 了	l	2
+嘛 没	m	2
+能 你	n	2
+丶 着 啊	o	3
+平	p	1
+期 其 去	q	3
+人	r	1
+三	s	1
+它 他	t	2
+丿 得	u	2
+朩 一 士 土 木 有	v	6
+玩 我	w	2
+嗯 而	x	2
+疫 意 一	y	3
+咋 在	z	2
