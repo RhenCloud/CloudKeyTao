@@ -1,0 +1,26 @@
+# Rime dictionary
+# encoding: utf-8
+#
+# CloudKeyTao 的个人词库（作为 cloudkeytao.extended 的一个 import 表）。
+#
+# 谁是权威：
+#   * 本文件是**仓库内的权威副本**，由 cloudkeytao-custom-phrase-sync 定时器
+#     从输入法动态造词回流（见 NixOS-Config 的同名 timer）。
+#   * 运行时目录里的同名文件是部署产物，不要手改。
+#
+# 为什么它同时在仓库里、又在产物里：
+#   输入法首次部署时需要一个存在的表，否则 extended 的 import 会报缺失；
+#   之后这个表会被定时器不断改写，所以它不能由产物强制覆盖。
+#   两者靠 NixOS-Config 的 userOwnedFiles 列表隔开。
+#
+# 注意：产物里的表名已归一为 cloudkeytao.*（build.sh 会自动改写 name: 行）。
+---
+name: cloudkeytao.custom.user
+version: "1.0"
+sort: by_weight
+use_preset_vocabulary: false
+columns:
+  - text
+  - code
+  - weight
+...

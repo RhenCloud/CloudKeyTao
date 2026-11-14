@@ -113,7 +113,7 @@ fi
 EXT="$OUT/keytao.extended.dict.yaml"
 [ -f "$EXT" ] || die "缺少 $EXT"
 
-INSERT_TABLES=(keytao.custom.user ${GENERATED_TABLES[@]+"${GENERATED_TABLES[@]}"})
+INSERT_TABLES=(cloudkeytao.custom.user cloudkeytao.local ${GENERATED_TABLES[@]+"${GENERATED_TABLES[@]}"})
 
 anchor_count=$(grep -c '^\.\.\.$' "$EXT" || true)
 [ "$anchor_count" -eq 1 ] || die "$EXT 里 '...' 结束符应恰好 1 个，实际 $anchor_count 个（上游结构变了，请检查）"
@@ -155,7 +155,9 @@ require_file rime.lua
 require_file lua/_upstream.lua
 require_file lua/select_character.lua
 require_file cloudkeytao.custom.user.dict.yaml
+require_file cloudkeytao.local.dict.yaml
 require_file cloudkeytao.extended.dict.yaml
+require_grep cloudkeytao.extended.dict.yaml "  - cloudkeytao.local"
 
 require_abs keytao.schema.yaml
 require_abs keytao-bj.schema.yaml

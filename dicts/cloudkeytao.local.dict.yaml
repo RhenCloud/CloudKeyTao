@@ -1,0 +1,25 @@
+# Rime dictionary
+# encoding: utf-8
+#
+# cloudkeytao.local —— 本机私有词库的占位表。
+#
+# 为什么产物里要有这个空表：
+#   cloudkeytao.extended 的 import_tables 里列了它。若文件不存在，
+#   rime 部署时会报缺表并忽略该 import —— 用户自造的词就打不出来。
+#
+# 谁会写它：
+#   NixOS-Config 的 rhen.fcitx5.keytaoUserDict（activation 时覆盖）
+#   ，以及 keytaoUserDict 为空时的「本来就是这样」。
+#
+# 本文件刻意留空，且列在 extended 的**最后**（优先级最低），
+# 避免本机词条压过方案自带的词库。
+---
+name: cloudkeytao.local
+version: "1.0"
+sort: by_weight
+use_preset_vocabulary: false
+columns:
+  - text
+  - code
+  - weight
+...
