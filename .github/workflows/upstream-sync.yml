@@ -24,12 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # actions/checkout@v4.4.0
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
       # cachix/install-nix-action@v27
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
