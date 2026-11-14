@@ -1,0 +1,102 @@
+name: release
+
+# 打 tag 时构建产物并挂在 release 上。
+#
+# 为什么安卓需要这一步：
+#   安卓的 fcitx5 没法用 nix，只能吃一个 zip。
+#   所以 release 里必须有可直接导入的 .zip —— 这就是「单源真相」的出口：
+#   与 Linux 装的是同一份 dist/rime/。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      # cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: 先跑一遍全量验收
+        run: nix develop --command ./scripts/check-all.sh
+
+      - name: 构建并打包
+        id: pack
+        run: |
+          out=$(nix build .#rime-data --print-out-paths)
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+          # 安卓端直接解压到用户目录即可，所以 zip 的根就是 rime 内容，
+          # 不要多套一层目录。
+          (cd "$out" && zip -qr "$GITHUB_WORKSPACE/cloudkeytao-rime.zip" .)
+          sha256sum cloudkeytao-rime.zip > cloudkeytao-rime.zip.sha256
+          ls -lh cloudkeytao-rime.zip
+
+      - name: 提取版本说明
+        id: notes
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -f "docs/CHANGELOG.md" ]; then
+            echo "有 CHANGELOG，用作正文"
+            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 创建 release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.notes.outputs.tag }}
+          HAS_CHANGELOG: ${{ steps.notes.outputs.has_changelog }}
+        run: |
+          {
+            echo "CloudKeyTao $TAG"
+            echo
+            echo "## 安装"
+            echo
+            echo "**Linux（NixOS/flakes）**"
+            echo
+            echo '```nix'
+            echo "# 见 README 的「安装」一节；消费的是 packages.rime-data"
+            echo '```'
+            echo
+            echo "**安卓（fcitx5-android）**"
+            echo
+            echo "1. 下载下方的 \`cloudkeytao-rime.zip\`"
+            echo "2. fcitx5-android → 输入法 → Rime → 导入方案数据"
+            echo "3. 选择 zip，然后在方案菜单里选 CloudKeyTao"
+            echo
+            echo "## 校验"
+            echo
+            echo '```'
+            cat cloudkeytao-rime.zip.sha256
+            echo '```'
+            echo
+            echo "## 说明"
+            echo
+            echo "本产物**只有一个方案** \`cloudkeytao\`，不含上游的其他方案。"
+            echo "词库来自上游 pin，表名统一归一为 \`cloudkeytao.*\`。"
+            if [ "$HAS_CHANGELOG" = "true" ]; then
+              echo
+              echo "---"
+              echo
+              cat docs/CHANGELOG.md
+            fi
+          } > release-body.md
+          gh release create "$TAG" \
+            --title "CloudKeyTao $TAG" \
+            --notes-file release-body.md \
+            cloudkeytao-rime.zip cloudkeytao-rime.zip.sha256

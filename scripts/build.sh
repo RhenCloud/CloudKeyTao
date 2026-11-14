@@ -78,9 +78,12 @@ cp "$REPO_ROOT/overlay/rime.lua" "$OUT/rime.lua"
 
 # ── 4. Lua 模块：上游在前，我们的覆盖在后 ───────────────────────────────────
 cp "$REPO_ROOT"/lua/*.lua "$OUT/lua/"
-if [ -d "$REPO_ROOT/overlay/lua" ] && compgen -G "$REPO_ROOT/overlay/lua/*.lua" >/dev/null; then
-    cp "$REPO_ROOT"/overlay/lua/*.lua "$OUT/lua/"
-    log "已应用 overlay/lua 覆盖: $(cd "$REPO_ROOT/overlay/lua" && ls *.lua | tr '\n' ' ')"
+shopt -s nullglob
+overlay_lua=("$REPO_ROOT"/overlay/lua/*.lua)
+shopt -u nullglob
+if [ ${#overlay_lua[@]} -gt 0 ]; then
+    cp "${overlay_lua[@]}" "$OUT/lua/"
+    log "已应用 overlay/lua 覆盖: $(cd "$REPO_ROOT/overlay/lua" && printf '%s ' *.lua)"
 fi
 
 # ── 5. 配置 patch（cloudkeytao.custom.yaml / default.custom.yaml）─────────────
@@ -92,9 +95,12 @@ cp "$REPO_ROOT"/dicts/*.dict.yaml "$OUT"/
 
 # 6b. 生成词库（M2 起存在）
 GENERATED_TABLES=()
-if [ -d "$REPO_ROOT/dicts/gen" ] && compgen -G "$REPO_ROOT/dicts/gen/*.dict.yaml" >/dev/null; then
-    cp "$REPO_ROOT"/dicts/gen/*.dict.yaml "$OUT"/
-    for f in "$REPO_ROOT"/dicts/gen/*.dict.yaml; do
+shopt -s nullglob
+gen_dicts=("$REPO_ROOT"/dicts/gen/*.dict.yaml)
+shopt -u nullglob
+if [ ${#gen_dicts[@]} -gt 0 ]; then
+    cp "${gen_dicts[@]}" "$OUT"/
+    for f in "${gen_dicts[@]}"; do
         # 从 name: 行取表名，避免用文件名猜
         GENERATED_TABLES+=("$(awk '/^name:[[:space:]]*/{print $2; exit}' "$f")")
     done

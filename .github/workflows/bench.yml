@@ -1,0 +1,81 @@
+name: bench
+
+# bench 单独成工作流而不是并进 validate，原因：
+#   1. PR 评论需要写权限，validate 是只读的
+#   2. bench 想把指标贴到 PR 里，失败了也要贴（说明退化了多少）
+on:
+  pull_request:
+    paths:
+      - "dicts/**"
+      - "bench/**"
+      - "scripts/bench.py"
+      - "overlay/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      # cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: 构建
+        run: nix develop --command ./scripts/build.sh
+
+      # bench 的 --check 在指标变差时退出 1。这里允许它失败，
+      # 好让下一步把数字贴出来 —— 只报「失败了」而不报「差多少」没用。
+      - name: 跑基准
+        id: bench
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          # GH Actions 用 bash -e 起 run 块。直接写 `cmd | tee; echo $?`
+          # 会在 cmd 失败时就被 -e 退出，永远走不到 echo，
+          # 导致 exit_code 为空、后面永远当成成功。用 && / || 护一下。
+          rc=0
+          nix develop --command python3 scripts/bench.py --check \
+            2>&1 | tee bench.txt || rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: 生成评论正文
+        env:
+          OUTCOME: ${{ steps.bench.outputs.exit_code }}
+        run: |
+          {
+            printf '## bench 结果\n\n```\n'
+            cat bench.txt
+            printf '```\n'
+            if [ "$OUTCOME" != "0" ]; then
+              printf '\n**结论：指标变差。**\n'
+              printf '若是有意为之，请在有说明的前提下重跑：\n\n'
+              printf '`nix develop -c python3 scripts/bench.py'
+              printf -- ' --write-baseline`\n'
+            fi
+          } > comment.md
+
+      - name: 贴评论
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --body-file comment.md
+
+      - name: 按基准结果判定
+        if: steps.bench.outputs.exit_code != '0'
+        run: |
+          echo "bench 指标变差（退出码 $OUTCOME）" >&2
+          exit 1
+        env:
+          OUTCOME: ${{ steps.bench.outputs.exit_code }}

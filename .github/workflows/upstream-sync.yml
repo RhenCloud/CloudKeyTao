@@ -1,0 +1,101 @@
+name: upstream-sync
+
+# 上游有新 commit 时**开一个 PR**，而不是自动改 pin。
+#
+# 为什么不自动跟进：
+#   上游改键位/词库会直接改变输入手感。这不是依赖升级，是行为变更，
+#   必须有人看过 bench 数字、实际敲一遍才能合。
+#   所以这个工作流只负责「发现 + 提议」，merge 永远是人的决定。
+on:
+  schedule:
+    # 每周一 03:00 UTC
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: xkinput/KeyTao
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      # cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: 比较上游 HEAD 与当前 pin
+        id: cmp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pinned=$(jq -r '.nodes.KeyTao.locked.rev' flake.lock)
+          latest=$(gh api "repos/$UPSTREAM_REPO/commits/HEAD" --jq .sha)
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$pinned" = "$latest" ]; then
+            echo "已是最新，无需动作"
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "有新 commit: $pinned → $latest"
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 挪 pin 并验证
+        if: steps.cmp.outputs.stale == 'true'
+        env:
+          LATEST: ${{ steps.cmp.outputs.latest }}
+        run: |
+          # flake.nix 里的 rev 是这一行，定点替换
+          sed -i "s|KeyTao/[0-9a-f]\{40\}\"|KeyTao/$LATEST\"|" flake.nix
+          grep -n "KeyTao/" flake.nix
+          nix flake lock
+          nix develop --command ./scripts/check-all.sh
+
+      - name: 提交 PR
+        if: steps.cmp.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PINNED: ${{ steps.cmp.outputs.pinned }}
+          LATEST: ${{ steps.cmp.outputs.latest }}
+        run: |
+          branch="upstream-sync/${LATEST:0:8}"
+          git config user.name  "github-actions[bot]"
+          bot="41898282+github-actions[bot]"
+          git config user.email "$bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add flake.nix flake.lock
+          git commit -m "chore(upstream): 跟进 KeyTao ${LATEST:0:8}"
+          git push origin "$branch"
+
+          # PR 正文要写清楚「这是行为变更，不是依赖升级」
+          {
+            echo "上游 \`$UPSTREAM_REPO\` 有新 commit。"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| 当前 pin | \`$PINNED\` |"
+            echo "| 上游 HEAD | \`$LATEST\` |"
+            echo
+            echo "**这不是普通依赖升级。** 上游可能改了键位、词库或排序，"
+            echo "会直接改变输入手感。合并前请："
+            echo
+            echo "1. 看 bench 结果的数字变化"
+            echo "2. 实际敲一遍，确认没有意外的行为变更"
+            echo "3. 检查 \`git diff\` 里产物层面的差异"
+            echo
+            echo "\`check-all.sh\` 已在 CI 里跑过，但那只能证明「没坏」，"
+            echo "不能证明「还顺手」。"
+          } > pr-body.md
+          gh pr create --title "chore(upstream): 跟进 KeyTao ${LATEST:0:8}" \
+            --body-file pr-body.md --base main --head "$branch"

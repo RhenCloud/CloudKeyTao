@@ -1,0 +1,46 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 所有 action 都钉到 commit SHA 而不是 tag。
+# tag 是可变的（上游可随时把 v4 指到别的 commit），SHA 不是。
+# 后面注释保留人类可读的版本号，方便升级时辨认。
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout@v4.4.0
+      # persist-credentials: false —— 否则 token 会写进 .git/config，
+      # 后续任何步骤（包括构建脚本、上传 artifact）都能读到它。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      # cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # 全部检查都在 nix develop 里跑，与本地完全同一条链路。
+      # 没有第二套「CI 专用」命令 —— 那样迟早会漂移。
+      - name: 全量验收
+        run: nix develop --command ./scripts/check-all.sh
+
+      # 产物作为 artifact，便于人工试装
+      - name: 构建产物
+        run: nix build .#rime-data --print-out-paths
+
+      # actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cloudkeytao-rime-data
+          path: result/
+          retention-days: 14
