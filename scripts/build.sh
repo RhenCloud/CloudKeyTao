@@ -93,7 +93,33 @@ cp "$REPO_ROOT"/overlay/*.custom.yaml "$OUT"/
 # 6a. 手写／回流词库（仓库内权威副本）
 cp "$REPO_ROOT"/dicts/*.dict.yaml "$OUT"/
 
-# 6b. 生成词库（M2 起存在）
+# ── 6b. 生成词库（M2 起）────────────────────────────────────────────────
+# cloudkeytao.xmjd6：从 xmjd6 加工出来的长尾词组表（§6）。
+# 生成逻辑在 scripts/merge-xmjd6.py，这里只负责调用与校验。
+#
+# 为什么要传 --existing：§6.4 要求与 keytao 已有词条重复的保留 keytao 版本。
+# 实测 cizu+fjcy 里有 9.3 万条与 keytao 重叠，不排除的话这些词会在
+# 候选里出现两次（同一个 (text,code) 在两个表里各一份）。
+if [ -n "$XMJD6_SRC" ]; then
+    mkdir -p "$REPO_ROOT/dicts/gen"
+    merge_args=()
+    shopt -s nullglob
+    for f in "$KEYTAO_SRC"/rime/keytao.*.dict.yaml; do
+        merge_args+=(--existing "$f")
+    done
+    shopt -u nullglob
+    [ ${#merge_args[@]} -gt 0 ] || die "找不到任何 keytao.*.dict.yaml 作为 --existing 输入"
+
+    log "生成 cloudkeytao.xmjd6（xmjd6-cizu/fjcy >=4 码 + danzi）..."
+    "$PYTHON" "$REPO_ROOT/scripts/merge-xmjd6.py" \
+        --xmjd6-src "$XMJD6_SRC" \
+        --out "$REPO_ROOT/dicts/gen/cloudkeytao.xmjd6.dict.yaml" \
+        --report "$REPO_ROOT/dicts/gen/xmjd6-report.md" \
+        "${merge_args[@]}"
+else
+    die "XMJD6_SRC 未设置：M2 起构建必须提供 xmjd6 词库来源"
+fi
+
 GENERATED_TABLES=()
 shopt -s nullglob
 gen_dicts=("$REPO_ROOT"/dicts/gen/*.dict.yaml)
@@ -213,6 +239,68 @@ log "switches/@3 = emoji_cn ✓（索引 patch 有效）"
 grep -q '^key:' "$OUT/cloudkeytao.schema.yaml" \
     && die "cloudkeytao.schema.yaml 出现孤立的顶层 'key:' 节点——patch 路径写错了（应为 key_binder/bindings/+）"
 log "无孤立 'key:' 节点 ✓（key_binder 路径正确）"
+
+# ── 13. 断言：词库合并的硬约束（§6.4）────────────────────────────────────────
+# 这些不是「跑通就行」的检查，而是方案里写明的接受条件。一旦被后续改动
+# 破坏（比如把 MIN_CODE_LEN 改小、或忘了传 --existing），这里必须 fail。
+XT="cloudkeytao.xmjd6.dict.yaml"
+require_file "$XT"
+XTP="$OUT/$XT"
+
+# 13a. 简码（≤3 码）层条目数不增加 —— Q15′ 的硬约束。
+# xmjd6 的短码层是键道三简字的地盘，插进来直接恶化首选命中。
+short_codes=$(awk -F'\t' 'NF>=3 && length($2)<=3' "$XTP" | wc -l)
+[ "$short_codes" -eq 0 ] \
+    || die "cloudkeytao.xmjd6 含 $short_codes 条 ≤3 码词条，违反 §6.4「简码层条目数不增加」"
+
+# 13b. 码长上限：键道编码最长 6 码；超长码在别处是数据错误
+long_codes=$(awk -F'\t' 'NF>=3 && length($2)>6' "$XTP" | wc -l)
+[ "$long_codes" -eq 0 ] \
+    || die "cloudkeytao.xmjd6 含 $long_codes 条 >6 码词条"
+
+# 13c. 与 keytao 已有词库不得有 (text,code) 重复（§6.4）
+# 用产物里的表对比，而不是重新读上游：断言的是「最终产物」的性质。
+#
+# 必须固定 LC_ALL=C：comm 要求两个输入用**同一个** collation 排序。
+# 默认 locale 是中文时，sort 的排序规则与 comm 期望的不一致，
+# 会报「未排序」或给出假阳性。
+keytao_keys=$(mktemp)
+xmjd6_keys=$(mktemp)
+trap 'rm -f "$keytao_keys" "$xmjd6_keys"' EXIT
+for f in "$OUT"/cloudkeytao.single.dict.yaml "$OUT"/cloudkeytao.phrase.dict.yaml \
+         "$OUT"/cloudkeytao.supplement.dict.yaml "$OUT"/cloudkeytao.symbol.dict.yaml \
+         "$OUT"/cloudkeytao.css.dict.yaml "$OUT"/cloudkeytao.link.dict.yaml \
+         "$OUT"/cloudkeytao.english.dict.yaml; do
+    [ -f "$f" ] || continue
+    LC_ALL=C awk -F'\t' 'NF>=2 && $2 ~ /^[a-z;]+$/ {print $1"\t"$2}' "$f"
+done | LC_ALL=C sort -u > "$keytao_keys"
+LC_ALL=C awk -F'\t' 'NF>=3 {print $1"\t"$2}' "$XTP" | LC_ALL=C sort -u > "$xmjd6_keys"
+overlap=$(LC_ALL=C comm -12 "$keytao_keys" "$xmjd6_keys" | wc -l)
+[ "$overlap" -eq 0 ] \
+    || die "cloudkeytao.xmjd6 与已有词库有 $overlap 条 (text,code) 重复，违反 §6.4（检查是否忘了传 --existing）"
+
+# 13d. 平均候选数与最大候选数（§6.4）
+# 把产物里所有表合起来算，因为候选是跨表展示的。
+avg_and_max=$(LC_ALL=C awk -F'\t' '
+    FNR==1 { next }
+    NF>=2 && $1 !~ /^#/ && $2 ~ /^[a-z;]+$/ && $1 != "text" { c[$2]++ }
+    END {
+        n = length(c)
+        if (n == 0) { print "0 0"; exit }
+        total = 0
+        for (k in c) total += c[k]
+        mx = 0
+        for (k in c) if (c[k] > mx) mx = c[k]
+        printf "%.3f %d\n", total/n, mx
+    }
+' "$OUT"/cloudkeytao.*.dict.yaml)
+avg=${avg_and_max% *}
+mx=${avg_and_max#* }
+awk -v a="$avg" 'BEGIN { exit !(a <= 1.2) }' \
+    || die "平均候选数 $avg 超过 §6.4 上限 1.2"
+[ "$mx" -le 12 ] \
+    || die "最大候选数 $mx 超过 §6.4 上限 12"
+log "词库合并断言 ✓（简码层 0 新增、无 >6 码、与已有词库 0 重复、平均候选 $avg、最大 $mx）"
 
 log "OK —— 产物就绪: $OUT"
 log "     唯一方案: cloudkeytao"

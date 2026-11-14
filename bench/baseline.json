@@ -11,7 +11,8 @@
     "cloudkeytao.english",
     "cloudkeytao.css",
     "cloudkeytao.user",
-    "cloudkeytao.custom.user"
+    "cloudkeytao.custom.user",
+    "cloudkeytao.xmjd6"
   ],
   "metrics": {
     "corpus_chars": 1385,
@@ -19,6 +20,6 @@
     "empty_rate": 0.0,
     "first_hit_rate": 1.0,
     "avg_rank": 1.0,
-    "avg_len": 2.279
+    "avg_len": 2.238
   }
 }

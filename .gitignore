@@ -1,4 +1,6 @@
-plan/
+# 设计文档要进版本库（含实测修正的决策依据）；只有草稿忽略。
+plan/*.draft.md
+!plan/2026-11-14_cloudkeytao-design.md
 dist/
 dicts/gen/
 result

@@ -20,7 +20,17 @@
 的 `sort:` 排。所以 `single`（单字，第 1 张表）永远压过 `phrase`。
 
 这一点必须建模，否则 bench 会算出一个现实中不存在的顺序。
-本脚本用 (表序号, 表内权重降序, 表内原始行号) 三元组做排序键。
+本脚本用 (表序号, 表内原始行号) 二元组做排序键。
+
+>> 为什么表内权重也不参与排序（实测结论）
+>> extended 是 sort: original，这个设置会覆盖所有导入表的 sort: by_weight；
+>> 权重在整个产物里**完全不参与候选排序**。用 librime 实测验证：
+>> 同一码下把一条词组权重改为 99999、另一条为 1，候选顺序仍然是
+>> 文件里先写的在前 —— 权重被无视。
+>> 把这个表头改成 sort: by_weight 后，权重立刻接管排序，
+>> 「到」(w=10) 被「道：“」(w=100) 压到第 3 位。
+>> 两者只能取一：要么权重生效但需全局归一，要么权重无效但顺序稳定。
+>> 当前选的是后者（见 cloudkeytao.extended.dict.yaml 的 sort: original）。
 
 编码从哪来
 ==========
@@ -80,6 +90,10 @@ TABLE_ORDER = [
     "cloudkeytao.css",
     "cloudkeytao.user",
     "cloudkeytao.custom.user",
+    # M2 起：xmjd6 长尾词组，在 extended 的 import_tables 里排最后。
+    # 顺序必须与 cloudkeytao.extended.dict.yaml 里的一致，
+    # 因为 sort: original 下候选顺序完全由这个顺序决定。
+    "cloudkeytao.xmjd6",
 ]
 
 
@@ -100,30 +114,27 @@ def read_dict(path: Path) -> list[tuple[str, str, str]]:
     return rows
 
 
-def _weight(w: str) -> float:
-    try:
-        return float(w)
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def load_index() -> dict[str, list[tuple[str, str]]]:
     """code -> [(text, table)]，已按真实候选顺序排好。
 
-    排序键：表在 import_tables 里的位置 → 表内权重降序 → 表内原始顺序。
+    排序键：表在 import_tables 里的位置 → 表内原始顺序。
+
+    不把 weight 放进排序键：extended 的 sort: original 让权重整体失效，
+    实测确认（同码下 w=1 与 w=99999 按文件顺序排，与权重无关）。
+    按权重排序会算出**现实中不存在**的候选顺序。
     """
-    raw: dict[str, list[tuple[int, float, int, str, str]]] = defaultdict(list)
+    raw: dict[str, list[tuple[int, int, str, str]]] = defaultdict(list)
     for table_pos, table in enumerate(TABLE_ORDER):
         path = DIST / f"{table}.dict.yaml"
         if not path.exists():
             continue
-        for line_no, (text, code, weight) in enumerate(read_dict(path)):
-            raw[code].append((table_pos, -_weight(weight), line_no, text, table))
+        for line_no, (text, code, _weight) in enumerate(read_dict(path)):
+            raw[code].append((table_pos, line_no, text, table))
 
     index: dict[str, list[tuple[str, str]]] = {}
     for code, entries in raw.items():
-        entries.sort(key=lambda e: (e[0], e[1], e[2]))
-        index[code] = [(e[3], e[4]) for e in entries]
+        entries.sort(key=lambda e: (e[0], e[1]))
+        index[code] = [(e[2], e[3]) for e in entries]
     return index
 
 
