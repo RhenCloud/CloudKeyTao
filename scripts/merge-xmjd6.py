@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 import unicodedata
@@ -63,6 +64,14 @@ def log(msg: str) -> None:
 def die(msg: str) -> None:
     print(f"[merge] ERROR: {msg}", file=sys.stderr)
     sys.exit(1)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # ── 解析 ──────────────────────────────────────────────────────────────────────
@@ -151,6 +160,11 @@ def main() -> int:
     # 「同 code 同 text」保留 keytao 版本（含其 weight 与位置）；
     # 「同 code 不同 text」全部保留 —— 那才叫扩覆盖。
     stats: Counter[str] = Counter()
+    source_files = {
+        name: src / f"xmjd6.{name}.dict.yaml"
+        for name in ("cizu", "fjcy", "danzi")
+    }
+    source_hashes = {name: sha256_file(path) for name, path in source_files.items()}
     existing: set[tuple[str, str]] = set()
     for path in args.existing:
         n = 0
@@ -164,8 +178,8 @@ def main() -> int:
     seen: set[tuple[str, str]] = set()
     phrases: list[tuple[str, str]] = []
 
-    for name in ("xmjd6.cizu", "xmjd6.fjcy"):
-        path = src / f"{name}.dict.yaml"
+    for name in ("cizu", "fjcy"):
+        path = source_files[name]
         n_total = n_taken = 0
         for text, code, _w in iter_entries(path):
             n_total += 1
@@ -192,14 +206,14 @@ def main() -> int:
             n_taken += 1
         stats[f"taken_{name}"] = n_taken
         stats[f"total_{name}"] = n_total
-        log(f"{name}: 读入 {n_total}，取用 {n_taken}")
+        log(f"xmjd6.{name}: 读入 {n_total}，取用 {n_taken}")
 
     # ── 3. 收集单字：danzi 全量（Q21=A）───────────────────────────────────
     # 但短码（≤ 3）不取：§6.4 的硬约束是「简码层条目数不增加」。
     # xmjd6.danzi 里有 2184 条 1-3 码单字，它们会直接插到键道三简字前面。
     danzi: list[tuple[str, str]] = []
     danzi_seen: set[tuple[str, str]] = set()
-    for text, code, _w in iter_entries(src / "xmjd6.danzi.dict.yaml"):
+    for text, code, _w in iter_entries(source_files["danzi"]):
         stats["danzi_total"] += 1
         if not is_valid_code(code) or not is_clean(text):
             stats["danzi_skip"] += 1
@@ -250,7 +264,9 @@ def main() -> int:
             "# 由 scripts/merge-xmjd6.py 生成，请勿手改。\n"
             f"# 来源：xmjd6-rere 的 cizu/fjcy（仅码长 >= {MIN_CODE_LEN}）与 danzi（全量）\n"
             "# 权重刻度见方案文档 §6.2；随机重跑应得到字节级一致的文件。\n"
-            "---\n"
+            "# 输入文件 SHA-256：\n"
+            + "".join(f"#   xmjd6.{name}: {digest}\n" for name, digest in source_hashes.items())
+            + "---\n"
             "name: cloudkeytao.xmjd6\n"
             'version: "1.0"\n'
             "sort: by_weight\n"
@@ -278,7 +294,8 @@ def main() -> int:
             "| 项目 | 数值 |\n|---|---|\n"
             f"| 输出条目 | {total} |\n"
             f"| 唯一码数 | {len(per_code)} |\n"
-            f"| 平均候选/码 | {avg:.3f} |\n"
+            + "".join(f"| xmjd6.{name} SHA-256 | `{digest}` |\n" for name, digest in source_hashes.items())
+            + f"| 平均候选/码 | {avg:.3f} |\n"
             f"| 最大候选 | {mx_n}（码 `{mx_code}`）|\n"
             f"| 码长分布 | "
             + "、".join(f"{k}码 {by_len[k]}" for k in sorted(by_len))

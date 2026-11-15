@@ -40,7 +40,10 @@ fi
 # 共享数据目录：优先 RIME_SHARED，否则从 fcitx5-rime 猜
 SHARED=${RIME_SHARED:-}
 if [ -z "$SHARED" ]; then
-    SHARED=$(ls -d /nix/store/*/share/rime-data 2>/dev/null | grep -E 'fcitx5-rime' | sort -V | tail -1 || true)
+    for candidate in /nix/store/*fcitx5-rime*/share/rime-data; do
+        [ -d "$candidate" ] || continue
+        SHARED=$candidate
+    done
 fi
 [ -n "$SHARED" ] && [ -d "$SHARED" ] || die "找不到 rime 共享数据目录（设置 RIME_SHARED）"
 log "RIME_SHARED = $SHARED"
@@ -81,10 +84,17 @@ done
 # 产物里不能冒出第二个**方案**
 # （cloudkeytao.lookup.*.schema.yaml 是反查词库的编译载体，不算方案）
 mapfile -t schemas < <(
-    cd "$WORK/build" && ls *.schema.yaml 2>/dev/null \
-        | grep -v '^default\.yaml$' \
-        | grep -v '^cloudkeytao\.lookup\.' || true
+    cd "$WORK/build"
+    for schema in ./*.schema.yaml; do
+        [ -f "$schema" ] || continue
+        schema=${schema#./}
+        case "$schema" in
+            default.yaml|cloudkeytao.lookup.*) continue ;;
+        esac
+        printf '%s\n' "$schema"
+    done
 )
 [ "${#schemas[@]}" -eq 1 ] || die "build/ 应有 1 个方案 schema，实际: ${schemas[*]:-none}"
 
-log "OK —— 部署验证通过（$(( $(ls "$WORK"/build/*.bin | wc -l) )) 个 bin）"
+bin_count=$(find "$WORK/build" -maxdepth 1 -type f -name '*.bin' | wc -l)
+log "OK —— 部署验证通过（$bin_count 个 bin）"

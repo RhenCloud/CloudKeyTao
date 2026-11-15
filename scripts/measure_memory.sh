@@ -68,7 +68,10 @@ command -v c++ >/dev/null || die "找不到 c++（编译 probe 用）"
 # 共享数据目录：与 validate.sh 同一套推导
 SHARED=${RIME_SHARED:-}
 if [ -z "$SHARED" ]; then
-    SHARED=$(ls -d /nix/store/*/share/rime-data 2>/dev/null | grep -E 'fcitx5-rime' | sort -V | tail -1 || true)
+    for candidate in /nix/store/*fcitx5-rime*/share/rime-data; do
+        [ -d "$candidate" ] || continue
+        SHARED=$candidate
+    done
 fi
 [ -n "$SHARED" ] && [ -d "$SHARED" ] || die "找不到 rime 共享数据目录（设置 RIME_SHARED）"
 
@@ -89,7 +92,13 @@ fi
 log "librime = $RIME_LIB"
 
 WORK=$(mktemp -d)
-cleanup() { [ "$KEEP" -eq 1 ] && log "临时目录保留: $WORK" || rm -rf "$WORK"; }
+cleanup() {
+    if [ "$KEEP" -eq 1 ]; then
+        log "临时目录保留: $WORK"
+    else
+        rm -rf "$WORK"
+    fi
+}
 trap cleanup EXIT
 
 # ── probe：加载方案，等稳定，读 RSS（单位 KiB） ────────────────────────────

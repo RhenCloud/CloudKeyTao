@@ -279,7 +279,10 @@ require_abs keytao-dz.extended.dict.yaml
 # 例外：cloudkeytao.lookup.*.schema.yaml 是反查词库的编译载体，
 # 只有 schema_id / dictionary / 空 speller，不进 schema_list，
 # 用户菜单里看不到。它们必须存在，否则反查词典不会被编译。
-mapfile -t all_schema_files < <(cd "$OUT" && ls *.schema.yaml 2>/dev/null)
+mapfile -t all_schema_files < <(
+    cd "$OUT"
+    compgen -G '*.schema.yaml' || true
+)
 mapfile -t schema_files < <(
     printf '%s\n' "${all_schema_files[@]}" | grep -v '^cloudkeytao\.lookup\.' || true
 )
