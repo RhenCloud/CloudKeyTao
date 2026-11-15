@@ -14,12 +14,13 @@ local function load(path)
   local index = {}
   local file = io.open(path, "r")
   if not file then
-    return index
+    return nil
   end
 
   for line in file:lines() do
-    local text, code, weight = line:match("^([^\t]+)\t([^\t]+)\t(%d+)$")
-    if text and code and weight then
+    local text, code, weight = line:match("^([^\t]+)\t([^\t]+)\t([^\t]+)$")
+    weight = weight and tonumber(weight)
+    if text and code and weight and weight >= 0 then
       local bucket = index[code]
       if not bucket then
         bucket = {}
@@ -27,7 +28,7 @@ local function load(path)
       end
       bucket[#bucket + 1] = {
         text = text,
-        weight = tonumber(weight),
+        weight = weight,
       }
     end
   end
@@ -44,8 +45,11 @@ end
 function M.func(input, seg, env)
   local stamp = file_stamp(env.path)
   if stamp ~= env.stamp then
-    env.index = load(env.path)
-    env.stamp = stamp
+    local index = load(env.path)
+    if index then
+      env.index = index
+      env.stamp = stamp
+    end
   end
 
   for _, entry in ipairs(env.index[input] or {}) do

@@ -32,14 +32,26 @@ local function save_entry(text, code)
     entries[#entries + 1] = text .. "\t" .. code .. "\t" .. weight
   end
 
+  if text:find("[\t\r\n]") or code:find("[\t\r\n]") then
+    return false, "词条包含非法控制字符"
+  end
+
   local temp_path = path .. ".tmp"
   local output = io.open(temp_path, "w")
   if not output then
-    return
+    return false, "无法打开临时文件"
   end
-  output:write(table.concat(entries, "\n"), "\n")
+  local ok, err = output:write(table.concat(entries, "\n"), "\n")
   output:close()
-  os.rename(temp_path, path)
+  if not ok then
+    os.remove(temp_path)
+    return false, err or "写入失败"
+  end
+  if not os.rename(temp_path, path) then
+    os.remove(temp_path)
+    return false, "替换词库文件失败"
+  end
+  return true
 end
 
 function M.init(env)

@@ -11,7 +11,7 @@
 local M = {}
 
 function M.init(env)
-  M.size = env.engine.schema.config:get_int("menu/page_size") or 6
+  env.size = env.engine.schema.config:get_int("menu/page_size") or 6
 end
 
 -- 含 CJK 部首/汉字区字符即视为普通候选，否则视为表情/符号
@@ -20,7 +20,7 @@ local function is_emoji(text)
 end
 
 function M.func(input, env)
-  local size = M.size
+  local size = env.size or 6
   local deferred = {}
   local yielded = 0
 
