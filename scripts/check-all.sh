@@ -84,12 +84,15 @@ diff -r "$TMP_A" "$TMP_B" >/dev/null \
     || die "两次构建产物不一致（非幂等）"
 printf '  ✓ 两次构建字节级一致\n'
 
-step "11/11 工作流语法"
+step "11/12 工作流语法"
 if command -v actionlint >/dev/null; then
     actionlint .github/workflows/*.yml || die "actionlint 检查失败"
     printf '  ✓ actionlint\n'
 else
     printf '  (跳过：没有 actionlint)\n'
 fi
+
+step "12/12 运行时回归"
+./scripts/runtime-test.sh
 
 printf '\n\033[32m全部通过\033[0m\n'
