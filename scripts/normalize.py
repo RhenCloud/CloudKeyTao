@@ -145,11 +145,11 @@ def make_repl(mapping: dict[str, tuple[str, str]], kind: str):
 # 所以必须允许行首空白。
 REF_PATTERNS = [
     # name:  ...
-    (re.compile(r"^name:[ \t]*(\S+)[ \t]*$", re.M), "name"),
+    (re.compile(r"^name:[ \t]*(\S+)[ \t]*$", re.MULTILINE), "name"),
     # import_tables 里的列表项：  - keytao.xxx
-    (re.compile(r"^([ \t]*-[ \t]+)(\S+)[ \t]*$", re.M), "list"),
+    (re.compile(r"^([ \t]*-[ \t]+)(\S+)[ \t]*$", re.MULTILINE), "list"),
     # dictionary: / prism: 引用（允许缩进）
-    (re.compile(r"^([ \t]*(?:dictionary|prism):[ \t]*)(\S+)[ \t]*$", re.M), "ref"),
+    (re.compile(r"^([ \t]*(?:dictionary|prism):[ \t]*)(\S+)[ \t]*$", re.MULTILINE), "ref"),
 ]
 
 

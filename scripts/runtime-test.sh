@@ -13,8 +13,10 @@ command -v c++ >/dev/null || die "找不到 c++"
 [ -d "$DIST" ] || die "产物目录不存在: $DIST（先运行 scripts/build.sh）"
 
 if [ -z "$SHARED" ]; then
-    SHARED=$(ls -d /nix/store/*/share/rime-data 2>/dev/null \
-        | grep -E 'fcitx5-rime' | sort -V | tail -1 || true)
+    for candidate in /nix/store/*fcitx5-rime*/share/rime-data; do
+        [ -d "$candidate" ] || continue
+        SHARED=$candidate
+    done
 fi
 [ -d "$SHARED" ] || die "找不到 RIME_SHARED"
 

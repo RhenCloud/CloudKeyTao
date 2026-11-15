@@ -65,8 +65,12 @@ jobs:
             fi
           } > comment.md
 
+      # fork PR 通常没有 pull-requests:write 权限；这类 PR 仍保留 bench artifact，
+      # 但跳过评论，避免把“测试成功、评论失败”误报成工作流失败。
       - name: 贴评论
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
