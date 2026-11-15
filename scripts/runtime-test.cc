@@ -1,8 +1,10 @@
+#if __has_include(<rime_api.h>)
 #include <rime_api.h>
+#else
+#include "rime_api_compat.h"
+#endif
 
 #include <cstdio>
-#include <cstring>
-#include <string>
 
 static bool has_candidates(RimeApi* api, RimeSessionId session,
                            const char* input, const char* label) {
