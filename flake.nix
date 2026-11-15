@@ -115,13 +115,17 @@
               export HOME=$TMPDIR
               cp -r ${self.packages.${pkgs.stdenv.hostPlatform.system}.rime-data} rime
               chmod -R u+w rime
+              set +e
               rime_deployer --build rime ${pkgs.fcitx5-rime}/share/rime-data build \
-                > deploy.log 2>&1 || true
+                > deploy.log 2>&1
+              deploy_rc=$?
+              set -e
               if grep -qE '^E[0-9]' deploy.log; then
                 echo "部署失败："
                 grep -E '^E[0-9]' deploy.log
                 exit 1
               fi
+              test "$deploy_rc" -eq 0
               test -f build/cloudkeytao.extended.table.bin
               touch $out
             '';

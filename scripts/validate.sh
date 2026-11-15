@@ -61,6 +61,7 @@ if [ -n "$errors" ]; then
     printf '%s\n' "$errors" >&2
     die "部署产生 $(( $(printf '%s\n' "$errors" | wc -l) )) 条错误"
 fi
+[ "$deploy_rc" -eq 0 ] || die "rime_deployer 退出码异常: $deploy_rc"
 warnings=$(grep -cE '^W[0-9]' "$WORK/deploy.log" || true)
 [ "$warnings" -eq 0 ] || log "警告 $warnings 条（不致命）"
 
