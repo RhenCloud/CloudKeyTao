@@ -281,7 +281,12 @@ require_abs keytao-dz.extended.dict.yaml
 # 用户菜单里看不到。它们必须存在，否则反查词典不会被编译。
 mapfile -t all_schema_files < <(
     cd "$OUT"
-    compgen -G '*.schema.yaml' || true
+    shopt -s nullglob
+    schema_files=(./*.schema.yaml)
+    shopt -u nullglob
+    for schema in "${schema_files[@]}"; do
+        printf '%s\n' "${schema#./}"
+    done
 )
 mapfile -t schema_files < <(
     printf '%s\n' "${all_schema_files[@]}" | grep -v '^cloudkeytao\.lookup\.' || true
