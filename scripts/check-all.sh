@@ -35,7 +35,7 @@ for f in scripts/*.py; do
 done
 rm -rf scripts/__pycache__
 
-step "3/8 lua 语法"
+step "3/10 lua 语法"
 if command -v luac >/dev/null; then
     shopt -s nullglob
     for f in lua/*.lua overlay/lua/*.lua; do
@@ -47,19 +47,35 @@ else
     printf '  (跳过：没有 luac)\n'
 fi
 
-step "4/8 构建 + 结构断言"
+step "4/10 shellcheck"
+if command -v shellcheck >/dev/null; then
+    shellcheck scripts/*.sh || die "shellcheck 检查失败"
+    printf '  ✓ shellcheck\n'
+else
+    printf '  (跳过：没有 shellcheck)\n'
+fi
+
+step "5/10 python lint"
+if command -v ruff >/dev/null; then
+    ruff check scripts/*.py || die "ruff 检查失败"
+    printf '  ✓ ruff\n'
+else
+    printf '  (跳过：没有 ruff)\n'
+fi
+
+step "6/10 构建 + 结构断言"
 ./scripts/build.sh
 
-step "5/8 部署真编译"
+step "7/10 部署真编译"
 ./scripts/validate.sh --no-build
 
-step "6/8 占用清单未漂移"
+step "8/10 占用清单未漂移"
 "$PYTHON" scripts/gen-occupied-doc.py --check
 
-step "7/8 bench 无退化"
+step "9/10 bench 无退化"
 "$PYTHON" scripts/bench.py --check
 
-step "8/8 产物幂等"
+step "10/10 产物幂等"
 TMP_A=$(mktemp -d); TMP_B=$(mktemp -d)
 trap 'rm -rf "$TMP_A" "$TMP_B"' EXIT
 OUT="$TMP_A" ./scripts/build.sh >/dev/null
@@ -67,5 +83,13 @@ OUT="$TMP_B" ./scripts/build.sh >/dev/null
 diff -r "$TMP_A" "$TMP_B" >/dev/null \
     || die "两次构建产物不一致（非幂等）"
 printf '  ✓ 两次构建字节级一致\n'
+
+step "11/11 工作流语法"
+if command -v actionlint >/dev/null; then
+    actionlint .github/workflows/*.yml || die "actionlint 检查失败"
+    printf '  ✓ actionlint\n'
+else
+    printf '  (跳过：没有 actionlint)\n'
+fi
 
 printf '\n\033[32m全部通过\033[0m\n'

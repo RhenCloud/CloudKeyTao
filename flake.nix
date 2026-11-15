@@ -52,6 +52,8 @@
               pkgs.git
               pkgs.jq
               pkgs.shellcheck
+              pkgs.actionlint
+              pkgs.ruff
               # rime_deployer：部署/编译验证，CI 与本地用同一份
               pkgs.librime
               # luac：语法检查（上游 scripts/validate.sh 也用它）
