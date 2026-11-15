@@ -13,6 +13,7 @@
 #   6. 占用清单未漂移    gen-occupied-doc.py --check
 #   7. bench 无退化      bench.py --check
 #   8. 产物幂等          连跑两次构建，字节级比对
+#   9. 运行时 bench       校验关键候选的真实位次
 set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -92,7 +93,10 @@ else
     printf '  (跳过：没有 actionlint)\n'
 fi
 
-step "12/12 运行时回归"
+step "12/13 运行时回归"
 ./scripts/runtime-test.sh
+
+step "13/13 运行时 bench"
+./scripts/runtime-bench.sh
 
 printf '\n\033[32m全部通过\033[0m\n'
