@@ -67,9 +67,19 @@ docs/                    设计文档与自动生成的占用清单
 # 需要 rime_deployer（nix develop 里自带）
 nix develop
 ./scripts/build.sh          # → dist/rime/
+./scripts/check-all.sh      # 全量检查（含运行时回归）
 ```
 
-Linux 由 Nix 打包安装；Android 直接使用 release 里的 `cloudkeytao-<ver>.zip`。
+当前架构说明见 [`docs/design.md`](docs/design.md)。`plan/` 中的设计稿是历史记录，若与实际产物不一致，以构建脚本和当前架构文档为准。
+
+Linux 由 Nix 打包安装；Android 直接使用 release 里的 `cloudkeytao-rime.zip`，将 zip 内容解压到 fcitx5-android 的 Rime 用户数据目录后重新部署并选择 CloudKeyTao 方案。
+
+### 故障排查
+
+- `KEYTAO_SRC` 或 `XMJD6_SRC` 未设置：进入 `nix develop` 后再运行构建。
+- 反查无候选：先运行 `./scripts/runtime-test.sh`，确认三个 lookup `.bin` 均已生成；不要把 `cloudkeytao.lookup.*` 加入主词库的 `import_tables`。
+- 部署失败：查看 `scripts/validate.sh` 临时目录中的 `deploy.log`；现在部署退出码非零也会直接失败。
+- 动态造词：造词结果写入 Rime 用户目录的 `cloudkeytao-custom-phrase.txt`，必须保证该目录可写。
 
 ## 度量
 
